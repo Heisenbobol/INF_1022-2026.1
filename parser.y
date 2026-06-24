@@ -2,62 +2,40 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
+#include "ast.h"
 
 extern int yylex();
-extern FILE *yyin;
+
+No *root;
 
 void yyerror(const char *s);
-
-FILE *saida;
-
-void emit(const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(saida, fmt, args);
-    va_end(args);
-}
 %}
+
 %union {
     char *str;
+    No *node;
 }
-%token <str> ID
-%token <str> NUM
-%token <str> STRING
-%token <str> BOOL
 
-%token DISPOSITIVO
-%token SET
+%token <str> ID NUM STRING BOOL
+%token DISPOSITIVO SET SE ENTAO SENAO
+%token LIGAR DESLIGAR VERIFICAR
+%token ENVIAR ALERTA PARA TODOS
+%token GT LT GE LE EQ NE AND
 
-%token SE
-%token ENTAO
-%token SENAO
+%type <node> programa comandos comando
+%type <node> atribuicao acao alerta condicional
+%type <str> valor condicao lista_ids
 
-%token LIGAR
-%token DESLIGAR
-%token VERIFICAR
+%left AND
 
-%token ENVIAR
-%token ALERTA
-
-%token PARA
-%token TODOS
-
-%token GT LT GE LE EQ NE
-%token AND
-%type <str> valor
-%type <str> expressao
-%type <str> condicao
 %%
-
-lista_dispositivos
-    : ID
-    | lista_dispositivos ',' ID
-    ;
 
 programa
     : dispositivos comandos
+      {
+          root = novoNo(N_PROG, NULL, $2, NULL, NULL);
+          gerar(root);
+      }
     ;
 
 dispositivos
@@ -67,175 +45,151 @@ dispositivos
 
 dispositivo
     : DISPOSITIVO ':' '{' ID '}'
-        {
-        }
-
     | DISPOSITIVO ':' '{' ID ',' ID '}'
-        {
-            emit("%s = 0\n",$5);
-        }
     ;
 
 comandos
     : comandos comando
+      { $$ = novoNo(N_LISTA, NULL, $1, $2, NULL); }
+
     | comando
+      { $$ = $1; }
     ;
 
 comando
     : atribuicao '.'
+      { $$ = $1; }
+
     | acao '.'
+      { $$ = $1; }
+
     | alerta '.'
+      { $$ = $1; }
+
     | condicional
+      { $$ = $1; }
     ;
 
 atribuicao
     : SET ID '=' valor
-        {
-            emit("%s = %s\n",$2,$4);
-        }
-    ;
+      {
+          char buf[256];
+          sprintf(buf,"%s = %s", $2, $4);
+          $$ = novoNo(N_SET, buf, NULL, NULL, NULL);
+      }
 
-valor
-    : NUM
-        {
-            $$ = $1;
-        }
-
-    | BOOL
-        {
-            $$ = $1;
-        }
-
-    | ID
-        {
-            $$ = $1;
-        }
+    | SET ID '=' VERIFICAR '(' ID ')'
+      {
+          char buf[256];
+          sprintf(buf,"%s = verificar(\"%s\")", $2, $6);
+          $$ = novoNo(N_SET, buf, NULL, NULL, NULL);
+      }
     ;
 
 acao
     : LIGAR ID
-        {
-            emit("ligar(\"%s\")\n",$2);
-        }
+      {
+          char buf[256];
+          sprintf(buf,"ligar(\"%s\")", $2);
+          $$ = novoNo(N_ACAO, buf, NULL, NULL, NULL);
+      }
 
     | DESLIGAR ID
-        {
-            emit("desligar(\"%s\")\n",$2);
-        }
+      {
+          char buf[256];
+          sprintf(buf,"desligar(\"%s\")", $2);
+          $$ = novoNo(N_ACAO, buf, NULL, NULL, NULL);
+      }
 
     | VERIFICAR '(' ID ')'
-        {
-            emit("verificar(\"%s\")\n",$3);
-        }
+      {
+          char buf[256];
+          sprintf(buf,"verificar(\"%s\")", $3);
+          $$ = novoNo(N_ACAO, buf, NULL, NULL, NULL);
+      }
     ;
 
 alerta
     : ENVIAR ALERTA '(' STRING ')' ID
-        {
-            emit(
-                "alerta(\"%s\", %s)\n",
-                $6,
-                $4
-            );
-        }
-
-    | ENVIAR ALERTA '(' STRING ',' ID ')' ID
-        {
-            emit(
-                "alerta_var(\"%s\", %s, %s)\n",
-                $8,
-                $4,
-                $6
-            );
-        }
-alerta
-    :
-      ...
-    | ENVIAR ALERTA '(' STRING ')' PARA TODOS ':'
-      lista_dispositivos
       {
+          char buf[256];
+          sprintf(buf,"alerta(\"%s\", %s)", $6, $4);
+          $$ = novoNo(N_ALERTA, buf, NULL, NULL, NULL);
       }
+    ;
+
+condicional
+    : SE condicao ENTAO comandos
+      {
+          $$ = novoNo(N_IF, $2, $4, NULL, NULL);
+      }
+
+    | SE condicao ENTAO comandos SENAO comandos
+      {
+          $$ = novoNo(N_IF, $2, $4, $6, NULL);
+      }
+    ;
 
 condicao
     : ID GT valor
-        {
-            char *tmp = malloc(256);
-            sprintf(tmp,"%s > %s",$1,$3);
-            $$ = tmp;
-        }
+      {
+          char *t = malloc(256);
+          sprintf(t,"%s > %s", $1, $3);
+          $$ = t;
+      }
 
     | ID LT valor
-        {
-            char *tmp = malloc(256);
-            sprintf(tmp,"%s < %s",$1,$3);
-            $$ = tmp;
-        }
+      {
+          char *t = malloc(256);
+          sprintf(t,"%s < %s", $1, $3);
+          $$ = t;
+      }
 
     | ID GE valor
-        {
-            char *tmp = malloc(256);
-            sprintf(tmp,"%s >= %s",$1,$3);
-            $$ = tmp;
-        }
+      {
+          char *t = malloc(256);
+          sprintf(t,"%s >= %s", $1, $3);
+          $$ = t;
+      }
 
     | ID LE valor
-        {
-            char *tmp = malloc(256);
-            sprintf(tmp,"%s <= %s",$1,$3);
-            $$ = tmp;
-        }
+      {
+          char *t = malloc(256);
+          sprintf(t,"%s <= %s", $1, $3);
+          $$ = t;
+      }
 
     | ID EQ valor
-        {
-            char *tmp = malloc(256);
-            sprintf(tmp,"%s == %s",$1,$3);
-            $$ = tmp;
-        }
+      {
+          char *t = malloc(256);
+          sprintf(t,"%s == %s", $1, $3);
+          $$ = t;
+      }
 
     | ID NE valor
-        {
-            char *tmp = malloc(256);
-            sprintf(tmp,"%s != %s",$1,$3);
-            $$ = tmp;
-        }
+      {
+          char *t = malloc(256);
+          sprintf(t,"%s != %s", $1, $3);
+          $$ = t;
+      }
+
+    | condicao AND condicao
+      {
+          char *t = malloc(512);
+          sprintf(t,"(%s) and (%s)", $1, $3);
+          $$ = t;
+      }
     ;
-condicao
-    : condicao AND condicao
-        {
-            char *tmp = malloc(512);
 
-            sprintf(
-                tmp,
-                "(%s) and (%s)",
-                $1,
-                $3
-            );
+valor
+    : NUM   { $$ = $1; }
+    | BOOL  { $$ = $1; }
+    | ID    { $$ = $1; }
+    ;
 
-            $$ = tmp;
-        }
-condicional
-    : SE condicao ENTAO acao '.'
-        {
-            emit(
-                "if %s:\n",
-                $2
-            );
-        }
-condicional
-    : SE condicao ENTAO acao
-      SENAO acao '.'
-        {
-            emit(
-                "if %s:\n"
-                "    ...\n"
-                "else:\n"
-                "    ...\n",
-                $2
-            );
-        }
 %%
 
 void yyerror(const char *s)
 {
-    fprintf(stderr,"Erro: %s\n",s);
+    fprintf(stderr,"Erro: %s\n", s);
 }
