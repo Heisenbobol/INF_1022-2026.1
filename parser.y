@@ -1,8 +1,12 @@
+%code requires {
+    #include "ast.h"
+}
 %{
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "ast.h"
+#include "ast.h"  
+
 
 extern int yylex();
 
